@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BHMap no Power BI (Pages)</title>
+    <style>
+      html, body { height: 100%; margin: 0; font-family: Arial, sans-serif; }
+      #map { height: 100vh; width: 100vw; }
+      .panel{
+        position: fixed; top: 12px; left: 12px; z-index: 9999;
+        background: rgba(0,0,0,.75); color: #fff;
+        padding: 12px 14px; border-radius: 12px; max-width: 560px;
+        box-shadow: 0 10px 30px rgba(0,0,0,.35);
+      }
+      .panel h1{ font-size: 14px; margin: 0 0 8px; font-weight: 700; }
+      .panel .row{ font-size: 13px; line-height: 1.35; margin: 6px 0; }
+      .ok{ color: #9cff9c; }
+      .bad{ color: #ffb3b3; }
+      code{ color: #ffeaa7; }
+      .btn{
+        display:inline-block; margin-top:8px; padding:8px 10px;
+        background:#ffffff1a; border:1px solid #ffffff33;
+        border-radius:10px; color:#fff; text-decoration:none; cursor:pointer;
+        font-size:12px;
+      }
+      .btn:hover{ background:#ffffff26; }
+      .small{ opacity:.85; font-size: 12px; }
+      .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    </style>
+  </head>
+
+  <body>
+    <div class="panel" id="panel">
+      <h1>BHMap (Power BI) — Diagnóstico</h1>
+      <div class="row mono" id="step1">1) Carregando script do BHMap…</div>
+      <div class="row mono" id="step2">2) Verificando <code>BHMap.startMap</code>…</div>
+      <div class="row mono" id="step3">3) Inicializando mapa…</div>
+      <div class="row small">
+        Se falhar no Power BI, normalmente é:
+        <br/>• bloqueio de rede/proxy corporativo
+        <br/>• políticas do Power BI (conteúdo externo)
+        <br/>• endpoints/tiles do BHMap bloqueados
+      </div>
+      <a class="btn" onclick="location.reload()">Recarregar</a>
+      <a class="btn" href="https://bhmap.pbh.gov.br/" target="_blank" rel="noreferrer">Abrir BHMap direto</a>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+      function setLine(id, ok, msg){
+        const el = document.getElementById(id);
+        el.innerHTML = (ok ? '<span class="ok">✅</span> ' : '<span class="bad">❌</span> ') + msg;
+      }
+
+      window.addEventListener("error", (e) => {
+        console.error("window.error:", e.error || e.message);
+        setLine("step3", false, "Erro JS: " + (e.message || "ver console"));
+      });
+
+      const t = setTimeout(() => {
+        if (!window.BHMap) {
+          setLine("step1", false, "Script do BHMap NÃO carregou (bloqueio de rede/Power BI).");
+          setLine("step2", false, "BHMap indisponível.");
+          setLine("step3", false, "Não foi possível iniciar.");
+        }
+      }, 6000);
+
+      function initIfReady(){
+        if (!window.BHMap) return;
+        clearTimeout(t);
+        setLine("step1", true, "Script do BHMap carregou.");
+        if (typeof BHMap.startMap !== "function"){
+          setLine("step2", false, "BHMap existe, mas startMap não está disponível (mudança de API?).");
+          setLine("step3", false, "Não foi possível iniciar.");
+          return;
+        }
+        setLine("step2", true, "BHMap.startMap disponível.");
+        try{
+          BHMap.startMap("map");
+          setLine("step3", true, "Mapa inicializado. Se estiver branco, pode ser bloqueio de tiles/endpoints.");
+        }catch(err){
+          console.error(err);
+          setLine("step3", false, "Falhou ao iniciar: " + (err?.message || err));
+        }
+      }
+      window.__bhmap_initIfReady = initIfReady;
+    </script>
+
+    <script
+      type="text/javascript"
+      src="https://bhmap.pbh.gov.br/v2/api/visualizador/js?funcionalidade=util&layersbase=base&versao=0.0.3"
+      onload="window.__bhmap_initIfReady()"
+      onerror="setLine('step1', false, 'Falha ao carregar script do BHMap (bloqueio de rede/Power BI).')">
+    </script>
+  </body>
+</html>
