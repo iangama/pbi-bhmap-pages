@@ -11,7 +11,7 @@ html,body{
  margin:0;
  height:100%;
  background:#111;
- font-family:Segoe UI;
+ font-family:Segoe UI, Arial;
 }
 
 #map{
@@ -27,6 +27,9 @@ html,body{
  color:#fff;
  padding:12px;
  border-radius:8px;
+ font-size:13px;
+ max-width:320px;
+ z-index:999;
 }
 
 .panel2{
@@ -37,9 +40,27 @@ html,body{
  color:#fff;
  padding:12px;
  border-radius:8px;
+ font-size:13px;
  width:320px;
  max-height:80vh;
  overflow:auto;
+ z-index:999;
+}
+
+input[type=checkbox]{
+ margin-right:6px;
+}
+
+input[type=text]{
+ width:100%;
+ padding:6px;
+ margin-bottom:6px;
+ border-radius:4px;
+ border:none;
+}
+
+.layerRow{
+ margin-bottom:4px;
 }
 </style>
 </head>
@@ -48,92 +69,98 @@ html,body{
 
 <div id="map"></div>
 
-<div class="panel">
-<b>BHMap — Diagnóstico</b><br>
-✔ Script carregado<br>
-✔ startMap OK<br>
-✔ afterload OK
+<div class="panel" id="diag">
+<b>BHMap — Diagnóstico</b><br/>
+✓ Script carregado<br/>
+✓ startMap OK<br/>
+✓ afterload OK<br/>
 </div>
 
 <div class="panel2">
 <b>Camadas IDEBHGEO</b>
 <hr>
-<div id="layerList">Carregando...</div>
+<input id="layerSearch" placeholder="filtrar camada..." />
+<div id="layerList"></div>
 </div>
 
 <script>
 
-function init(){
+const WMS_BASE = "https://bhmap.pbh.gov.br/v2/api/idebhgeo/ows";
 
- BHMap.afterload = async function(){
-
-  try{
-
-   const r = await fetch(
-    "https://bhmap.pbh.gov.br/v2/api/metacamada/contexto/idebhgeo",
-    { credentials:"include" }
-   );
-
-   if(!r.ok) throw "bloqueado";
-
-   const txt = await r.text();
-   const matches = txt.match(/ide_bhgeo:[A-Z0-9_]+/g) || [];
-
-   buildList(matches);
-
-  }catch(e){
-
-   const fallback = [
+/*
+⚠ IMPORTANTE
+Aqui você cola a lista REAL das layers.
+Se você já tem as 373 / 379, cole aqui.
+*/
+const LAYERS = [
 "ide_bhgeo:DISTRITO_MUNICIPAL",
 "ide_bhgeo:CADASTRO_IMOBILIARIO",
 "ide_bhgeo:AREA_ABRANGENCIA_SAUDE",
 "ide_bhgeo:ZONA_HOMOGENEA_IPTU",
-"ide_bhgeo:TIPOLOGIA_USO_OCUPACAO_LOTE_2020"
-   ];
+"ide_bhgeo:TIPOLOGIA_USO_OCUPACAO_LOTE"
+];
 
-   buildList(fallback);
-  }
+function init(){
+
+ BHMap.afterload = function(){
+
+  buildLayerUI(LAYERS);
 
  };
 
  BHMap.startMap("map");
+
 }
 
-function buildList(list){
+function buildLayerUI(list){
 
- const el = document.getElementById("layerList");
- el.innerHTML = "";
+ const listEl = document.getElementById("layerList");
+ const searchEl = document.getElementById("layerSearch");
 
- list.forEach(layer=>{
+ function render(filter=""){
 
-  const div = document.createElement("div");
+  listEl.innerHTML="";
 
-  const cb = document.createElement("input");
-  cb.type="checkbox";
+  list
+   .filter(l=>l.toLowerCase().includes(filter.toLowerCase()))
+   .slice(0,50) // limite Power BI SAFE
+   .forEach(layer=>{
 
-  cb.onchange = ()=>{
+    const row = document.createElement("div");
+    row.className="layerRow";
 
-   if(cb.checked){
+    const cb = document.createElement("input");
+    cb.type="checkbox";
 
-    BHMap.Map.addLayer(new OpenLayers.Layer.WMS(
-     layer,
-     "https://bhmap.pbh.gov.br/v2/api/idebhgeo/ows",
-     {
-      layers:layer,
-      transparent:true,
-      format:"image/png"
-     },
-     { isBaseLayer:false }
-    ));
+    cb.onchange = ()=>{
+     if(cb.checked){
+      BHMap.Map.addLayer(
+       new OpenLayers.Layer.WMS(
+        layer,
+        WMS_BASE,
+        {
+         layers:layer,
+         transparent:true,
+         format:"image/png"
+        },
+        { isBaseLayer:false }
+       )
+      );
+     }
+    };
 
-   }
-  };
+    row.appendChild(cb);
+    row.append(layer);
 
-  div.appendChild(cb);
-  div.append(layer);
+    listEl.appendChild(row);
 
-  el.appendChild(div);
- });
+   });
+
+ }
+
+ render();
+
+ searchEl.oninput = ()=> render(searchEl.value);
 
 }
 
