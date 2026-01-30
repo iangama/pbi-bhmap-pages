@@ -7,165 +7,181 @@
 <script src="https://bhmap.pbh.gov.br/v2/api/visualizador/js?funcionalidade=util&layersbase=base&versao=0.0.3"></script>
 
 <style>
-html,body{
- margin:0;
- height:100%;
- background:#111;
- font-family:Segoe UI, Arial;
-}
-
-#map{
- width:100%;
- height:100%;
-}
+html,body{ margin:0; height:100%; background:#111; font-family:Segoe UI, Arial; }
+#map{ position:absolute; inset:0; }
 
 .panel{
- position:absolute;
- top:10px;
- left:10px;
- background:rgba(0,0,0,.75);
- color:#fff;
- padding:12px;
- border-radius:8px;
- font-size:13px;
- max-width:320px;
- z-index:999;
+ position:absolute; top:10px; left:10px; z-index:9999;
+ background:rgba(0,0,0,.75); color:#fff;
+ padding:12px; border-radius:10px; font-size:13px; max-width:340px;
+ box-shadow:0 10px 30px rgba(0,0,0,.35);
 }
 
 .panel2{
- position:absolute;
- top:10px;
- right:10px;
- background:rgba(0,0,0,.75);
- color:#fff;
- padding:12px;
- border-radius:8px;
- font-size:13px;
- width:320px;
- max-height:80vh;
- overflow:auto;
- z-index:999;
+ position:absolute; top:10px; right:10px; z-index:9999;
+ background:rgba(0,0,0,.75); color:#fff;
+ padding:12px; border-radius:10px; font-size:13px;
+ width:360px; max-height:80vh; overflow:auto;
+ box-shadow:0 10px 30px rgba(0,0,0,.35);
 }
 
-input[type=checkbox]{
- margin-right:6px;
-}
-
-input[type=text]{
- width:100%;
- padding:6px;
- margin-bottom:6px;
- border-radius:4px;
- border:none;
+input[type="text"]{
+ width:100%; padding:8px 10px; margin:8px 0 10px;
+ border-radius:10px; border:1px solid rgba(255,255,255,.15);
+ background:rgba(255,255,255,.08); color:#fff; outline:none;
 }
 
 .layerRow{
- margin-bottom:4px;
+ display:flex; align-items:center; gap:8px;
+ padding:6px 8px; border-radius:10px;
 }
+.layerRow:hover{ background:rgba(255,255,255,.08); }
+.layerName{ word-break:break-word; }
+.badge{ opacity:.85; font-size:12px; }
+
+.btn{
+ display:inline-block; margin-top:10px; padding:8px 10px;
+ border-radius:10px; border:1px solid rgba(255,255,255,.2);
+ background:rgba(255,255,255,.08); color:#fff; cursor:pointer;
+}
+.btn:hover{ background:rgba(255,255,255,.12); }
 </style>
 </head>
 
 <body>
-
 <div id="map"></div>
 
 <div class="panel" id="diag">
-<b>BHMap — Diagnóstico</b><br/>
-✓ Script carregado<br/>
-✓ startMap OK<br/>
-✓ afterload OK<br/>
+<b>BHMap — Diagnóstico</b><br>
+✓ Script carregado<br>
+✓ startMap OK<br>
+✓ afterload OK<br>
+<span class="badge">Dica: se WMS/Contexto bloquear (403), é proxy/WAF da PBH.</span>
 </div>
 
 <div class="panel2">
-<b>Camadas IDEBHGEO</b>
-<hr>
-<input id="layerSearch" placeholder="filtrar camada..." />
-<div id="layerList"></div>
+<b>Camadas IDEBHGEO</b><br>
+<span class="badge">Marque para carregar / desmarque para remover</span>
+<input id="layerSearch" placeholder="filtrar (ex: bairro, via, escola)..." />
+<div id="layerList">Carregando…</div>
+<button class="btn" id="btnClear">Remover todas</button>
 </div>
 
 <script>
-
 const WMS_BASE = "https://bhmap.pbh.gov.br/v2/api/idebhgeo/ows";
 
 /*
-⚠ IMPORTANTE
-Aqui você cola a lista REAL das layers.
-Se você já tem as 373 / 379, cole aqui.
+COLE AQUI A LISTA REAL (as 379).
+Pode ser "ide_bhgeo:NOME_DA_LAYER" (como você já tinha).
 */
 const LAYERS = [
-"ide_bhgeo:DISTRITO_MUNICIPAL",
-"ide_bhgeo:CADASTRO_IMOBILIARIO",
-"ide_bhgeo:AREA_ABRANGENCIA_SAUDE",
-"ide_bhgeo:ZONA_HOMOGENEA_IPTU",
-"ide_bhgeo:TIPOLOGIA_USO_OCUPACAO_LOTE"
+  "ide_bhgeo:DISTRITO_MUNICIPAL",
+  "ide_bhgeo:CADASTRO_IMOBILIARIO",
+  "ide_bhgeo:AREA_ABRANGENCIA_SAUDE",
+  "ide_bhgeo:ZONA_HOMOGENEA_IPTU",
+  "ide_bhgeo:TIPOLOGIA_USO_OCUPACAO_LOTE_2020",
+  "ide_bhgeo:TIPOLOGIA_USO_OCUPACAO_LOTE_2018"
 ];
 
+// mapa de layers adicionadas: nome -> instancia OpenLayers.Layer.WMS
+const added = new Map();
+
 function init(){
+  BHMap.afterload = function(){
+    buildLayerUI(LAYERS);
+  };
+  BHMap.startMap("map");
+}
 
- BHMap.afterload = function(){
+function addLayer(layerName){
+  if (added.has(layerName)) return;
 
-  buildLayerUI(LAYERS);
+  const lyr = new OpenLayers.Layer.WMS(
+    layerName,
+    WMS_BASE,
+    { layers: layerName, transparent: true, format: "image/png" },
+    { isBaseLayer: false }
+  );
 
- };
+  BHMap.Map.addLayer(lyr);
+  added.set(layerName, lyr);
+}
 
- BHMap.startMap("map");
+function removeLayer(layerName){
+  const lyr = added.get(layerName);
+  if (!lyr) return;
 
+  // remove do mapa
+  try { BHMap.Map.removeLayer(lyr); } catch(e) {}
+  // tenta destruir recursos
+  try { lyr.destroy(); } catch(e) {}
+
+  added.delete(layerName);
+}
+
+function clearAll(){
+  // copia chaves para não iterar enquanto deleta
+  const keys = Array.from(added.keys());
+  keys.forEach(removeLayer);
 }
 
 function buildLayerUI(list){
+  const listEl = document.getElementById("layerList");
+  const searchEl = document.getElementById("layerSearch");
+  const btnClear = document.getElementById("btnClear");
 
- const listEl = document.getElementById("layerList");
- const searchEl = document.getElementById("layerSearch");
+  function render(filter=""){
+    listEl.innerHTML = "";
 
- function render(filter=""){
+    const filtered = list
+      .filter(l => l.toLowerCase().includes(filter.toLowerCase()));
 
-  listEl.innerHTML="";
+    // Power BI às vezes sofre com DOM gigante; limita o render.
+    const toShow = filtered.slice(0, 80);
 
-  list
-   .filter(l=>l.toLowerCase().includes(filter.toLowerCase()))
-   .slice(0,50) // limite Power BI SAFE
-   .forEach(layer=>{
+    const head = document.createElement("div");
+    head.className = "badge";
+    head.style.marginBottom = "8px";
+    head.textContent = `Mostrando ${toShow.length} de ${filtered.length} (total ${list.length}). Selecionadas: ${added.size}.`;
+    listEl.appendChild(head);
 
-    const row = document.createElement("div");
-    row.className="layerRow";
+    toShow.forEach(layerName => {
+      const row = document.createElement("div");
+      row.className = "layerRow";
 
-    const cb = document.createElement("input");
-    cb.type="checkbox";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = added.has(layerName);
 
-    cb.onchange = ()=>{
-     if(cb.checked){
-      BHMap.Map.addLayer(
-       new OpenLayers.Layer.WMS(
-        layer,
-        WMS_BASE,
-        {
-         layers:layer,
-         transparent:true,
-         format:"image/png"
-        },
-        { isBaseLayer:false }
-       )
-      );
-     }
-    };
+      cb.onchange = () => {
+        if (cb.checked) addLayer(layerName);
+        else removeLayer(layerName);
 
-    row.appendChild(cb);
-    row.append(layer);
+        // atualiza contador sem rerender pesado
+        head.textContent = `Mostrando ${toShow.length} de ${filtered.length} (total ${list.length}). Selecionadas: ${added.size}.`;
+      };
 
-    listEl.appendChild(row);
+      const name = document.createElement("div");
+      name.className = "layerName";
+      name.textContent = layerName + " (WMS)";
 
-   });
+      row.appendChild(cb);
+      row.appendChild(name);
+      listEl.appendChild(row);
+    });
+  }
 
- }
+  render("");
 
- render();
+  searchEl.oninput = () => render(searchEl.value);
 
- searchEl.oninput = ()=> render(searchEl.value);
-
+  btnClear.onclick = () => {
+    clearAll();
+    render(searchEl.value);
+  };
 }
 
 init();
-
 </script>
 
 </body>
