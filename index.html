@@ -1,98 +1,213 @@
 <!DOCTYPE html>
 <html lang="pt-br">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>BHMap no Power BI (Pages)</title>
-    <style>
-      html, body { height: 100%; margin: 0; font-family: Arial, sans-serif; }
-      #map { height: 100vh; width: 100vw; }
-      .panel{
-        position: fixed; top: 12px; left: 12px; z-index: 9999;
-        background: rgba(0,0,0,.75); color: #fff;
-        padding: 12px 14px; border-radius: 12px; max-width: 560px;
-        box-shadow: 0 10px 30px rgba(0,0,0,.35);
-      }
-      .panel h1{ font-size: 14px; margin: 0 0 8px; font-weight: 700; }
-      .panel .row{ font-size: 13px; line-height: 1.35; margin: 6px 0; }
-      .ok{ color: #9cff9c; }
-      .bad{ color: #ffb3b3; }
-      code{ color: #ffeaa7; }
-      .btn{
-        display:inline-block; margin-top:8px; padding:8px 10px;
-        background:#ffffff1a; border:1px solid #ffffff33;
-        border-radius:10px; color:#fff; text-decoration:none; cursor:pointer;
-        font-size:12px;
-      }
-      .btn:hover{ background:#ffffff26; }
-      .small{ opacity:.85; font-size: 12px; }
-      .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-    </style>
-  </head>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>BHMap + Camadas IDEBHGEO (manual)</title>
+<style>
+html,body{height:100%;margin:0;font-family:Arial}
+#map{height:100vh;width:100vw}
+.panel{
+position:fixed;top:12px;left:12px;z-index:9999;
+background:rgba(0,0,0,.75);color:#fff;
+padding:12px 14px;border-radius:12px;max-width:560px;font-size:13px
+}
+.layers{
+position:fixed;top:12px;right:12px;z-index:9999;
+background:rgba(0,0,0,.75);color:#fff;
+padding:12px 14px;border-radius:12px;
+max-width:420px;max-height:65vh;overflow:auto;font-size:12px
+}
+.layers label{display:block;margin:6px 0;cursor:pointer}
+.layers input{margin-right:6px}
+.small{opacity:.85}
+.bad{color:#ffb3b3;white-space:pre-wrap}
+.search{width:100%;padding:8px 10px;border-radius:10px;border:1px solid #ffffff33;background:#ffffff1a;color:#fff;outline:none}
+.btn{display:inline-block;margin-top:8px;padding:8px 10px;background:#ffffff1a;border:1px solid #ffffff33;border-radius:10px;color:#fff;text-decoration:none;cursor:pointer;font-size:12px}
+</style>
+</head>
+<body>
 
-  <body>
-    <div class="panel" id="panel">
-      <h1>BHMap (Power BI) — Diagnóstico</h1>
-      <div class="row mono" id="step1">1) Carregando script do BHMap…</div>
-      <div class="row mono" id="step2">2) Verificando <code>BHMap.startMap</code>…</div>
-      <div class="row mono" id="step3">3) Inicializando mapa…</div>
-      <div class="row small">
-        Se falhar no Power BI, normalmente é:
-        <br/>• bloqueio de rede/proxy corporativo
-        <br/>• políticas do Power BI (conteúdo externo)
-        <br/>• endpoints/tiles do BHMap bloqueados
-      </div>
-      <a class="btn" onclick="location.reload()">Recarregar</a>
-      <a class="btn" href="https://bhmap.pbh.gov.br/" target="_blank" rel="noreferrer">Abrir BHMap direto</a>
-    </div>
+<div class="panel">
+<b>BHMap Diagnóstico</b><br/>
+<div id="d1">1) Carregando script…</div>
+<div id="d2">2) startMap…</div>
+<div id="d3">3) afterload…</div>
+<div class="small">Dica: se as camadas não carregarem, pode ser CORS/política → proxy interno.</div>
+</div>
 
-    <div id="map"></div>
+<div class="layers">
+<b>Camadas IDEBHGEO</b>
+<div id="layersStatus" class="small">Buscando contexto…</div>
+<input id="q" class="search" placeholder="filtrar (ex: bairro, via, escola)"/>
+<div style="margin-top:8px" id="layersList"></div>
+<div id="err" class="bad" style="display:none;"></div>
+<a class="btn" onclick="location.reload()">Recarregar</a>
+</div>
 
-    <script>
-      function setLine(id, ok, msg){
-        const el = document.getElementById(id);
-        el.innerHTML = (ok ? '<span class="ok">✅</span> ' : '<span class="bad">❌</span> ') + msg;
-      }
+<div id="map"></div>
 
-      window.addEventListener("error", (e) => {
-        console.error("window.error:", e.error || e.message);
-        setLine("step3", false, "Erro JS: " + (e.message || "ver console"));
-      });
+<script>
+const CONTEXTO_URL="https://bhmap.pbh.gov.br/v2/api/metacamada/contexto/idebhgeo";
+const __layers=new Map();
+let __defs=[];
 
-      const t = setTimeout(() => {
-        if (!window.BHMap) {
-          setLine("step1", false, "Script do BHMap NÃO carregou (bloqueio de rede/Power BI).");
-          setLine("step2", false, "BHMap indisponível.");
-          setLine("step3", false, "Não foi possível iniciar.");
-        }
-      }, 6000);
+function diag(id, ok, msg){
+document.getElementById(id).textContent=(ok?"✅ ":"❌ ")+msg;
+}
+function status(msg){document.getElementById("layersStatus").textContent=msg;}
+function showErr(msg){
+const el=document.getElementById("err");
+el.style.display="block";
+el.textContent=msg;
+}
 
-      function initIfReady(){
-        if (!window.BHMap) return;
-        clearTimeout(t);
-        setLine("step1", true, "Script do BHMap carregou.");
-        if (typeof BHMap.startMap !== "function"){
-          setLine("step2", false, "BHMap existe, mas startMap não está disponível (mudança de API?).");
-          setLine("step3", false, "Não foi possível iniciar.");
-          return;
-        }
-        setLine("step2", true, "BHMap.startMap disponível.");
-        try{
-          BHMap.startMap("map");
-          setLine("step3", true, "Mapa inicializado. Se estiver branco, pode ser bloqueio de tiles/endpoints.");
-        }catch(err){
-          console.error(err);
-          setLine("step3", false, "Falhou ao iniciar: " + (err?.message || err));
-        }
-      }
-      window.__bhmap_initIfReady = initIfReady;
-    </script>
+function normType(url, raw){
+const t=(raw||"").toString().toUpperCase();
+if(t.includes("WFS")) return "WFS";
+if(t.includes("WMTS")) return "WMTS";
+if(t.includes("WMS")) return "WMS";
+const u=(url||"").toString().toLowerCase();
+if(u.includes("wmts")) return "WMTS";
+if(u.includes("wfs")) return "WFS";
+return "WMS";
+}
 
-    <script
-      type="text/javascript"
-      src="https://bhmap.pbh.gov.br/v2/api/visualizador/js?funcionalidade=util&layersbase=base&versao=0.0.3"
-      onload="window.__bhmap_initIfReady()"
-      onerror="setLine('step1', false, 'Falha ao carregar script do BHMap (bloqueio de rede/Power BI).')">
-    </script>
-  </body>
+// varredura genérica em JSON procurando objetos que tenham url + layer/name
+function findDefs(obj){
+const out=[];
+const seen=new Set();
+function walk(x){
+if(!x||typeof x!=="object") return;
+if(seen.has(x)) return;
+seen.add(x);
+
+const url=x.url||x.URL||x.endpoint||x.serviceUrl||x.service_url||x.baseUrl||x.base_url;
+const layer=x.layer||x.layerName||x.layer_name||x.name||x.nome||x.camada||x.id;
+const title=x.title||x.titulo||x.nome||x.name||layer;
+const type=normType(url, x.type||x.tipo||x.serviceType||x.service_type);
+
+if(url && layer){
+out.push({title:String(title), url:String(url), layer:String(layer), type});
+}
+for(const k of Object.keys(x)) walk(x[k]);
+}
+walk(obj);
+return out;
+}
+
+function uniqDefs(defs){
+const keyset=new Set();
+const out=[];
+for(const d of defs){
+const k=d.type+"|"+d.url+"|"+d.layer;
+if(keyset.has(k)) continue;
+keyset.add(k);
+out.push(d);
+}
+return out;
+}
+
+function addWms(def){
+const k=def.type+"|"+def.url+"|"+def.layer;
+if(__layers.has(k)) return;
+
+const params={layers:def.layer, transparent:true, format:"image/png"};
+const opts={isBaseLayer:false, visibility:true};
+
+const layer=new OpenLayers.Layer.WMS(def.title, def.url, params, opts);
+BHMap.Map.addLayer(layer);
+__layers.set(k, layer);
+}
+
+function removeLayer(def){
+const k=def.type+"|"+def.url+"|"+def.layer;
+const layer=__layers.get(k);
+if(!layer) return;
+BHMap.Map.removeLayer(layer);
+__layers.delete(k);
+}
+
+function render(defs){
+const list=document.getElementById("layersList");
+list.innerHTML="";
+
+const q=(document.getElementById("q").value||"").toLowerCase().trim();
+const filtered=defs.filter(d => !q || (d.title+" "+d.layer).toLowerCase().includes(q));
+
+status(`Defs detectadas: ${defs.length} | exibindo: ${filtered.length} (nada é carregado até marcar)`);
+
+filtered.slice(0, 120).forEach(d=>{
+// por enquanto só WMS/WMTS (WFS fica pra fase 2)
+if(d.type==="WFS") return;
+
+const row=document.createElement("label");
+row.innerHTML=`<input type="checkbox"/> ${d.title} <span class="small">(${d.type})</span>`;
+const cb=row.querySelector("input");
+cb.addEventListener("change", ()=>{
+if(cb.checked) addWms(d);
+else removeLayer(d);
+});
+list.appendChild(row);
+});
+}
+
+async function loadContext(){
+try{
+status("Buscando contexto IDEBHGEO…");
+const r=await fetch(CONTEXTO_URL);
+const txt=await r.text();
+const t=txt.trim();
+const isJson=t.startsWith("{") || t.startsWith("[");
+
+if(!isJson){
+status("Contexto retornou XML. Preciso adaptar o parser pro schema.");
+showErr("O contexto veio em XML. Próximo passo: pegar um trecho pequeno do XML (head) e ajustar o parser.");
+console.log("XML head:", txt.slice(0,800));
+return;
+}
+
+const defs=uniqDefs(findDefs(JSON.parse(txt)));
+__defs=defs;
+
+if(!defs.length){
+status("Contexto OK, mas sem defs detectadas (schema diferente).");
+showErr("O contexto JSON carregou, mas o schema não bateu com o detector genérico. Próximo passo: você me manda 30-60 linhas do JSON (trecho onde apareça url+layer) e eu ajusto o parser.");
+console.log("JSON keys top:", Object.keys(JSON.parse(txt)));
+return;
+}
+
+render(defs);
+document.getElementById("q").addEventListener("input", ()=>render(__defs));
+
+}catch(e){
+status("Falhou ao buscar contexto.");
+showErr("Falha ao buscar contexto (CORS/rede/política):\n"+String(e));
+console.error(e);
+}
+}
+
+window.__bh_boot=function(){
+diag("d1",true,"Script carregado");
+BHMap.afterload=function(){
+diag("d2",true,"startMap OK");
+diag("d3",true,"afterload OK");
+
+try{
+BHMap.Map.addControls([new OpenLayers.Control.MousePosition(), new OpenLayers.Control.ScaleLine()]);
+} catch(e){ console.warn(e); }
+
+loadContext();
+};
+BHMap.startMap("map");
+};
+</script>
+
+<script
+src="https://bhmap.pbh.gov.br/v2/api/visualizador/js?funcionalidade=util&layersbase=base&versao=0.0.3"
+onload="__bh_boot()"
+onerror="diag('d1',false,'Falha ao carregar BHMap')">
+</script>
+
+</body>
 </html>
